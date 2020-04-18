@@ -61,6 +61,7 @@ public:
 	int Reload(const char*);
 	int Reload(const wchar_t*);
 	int Reload(FILE* f);
+	int ReloadBuf(char*);
 	inline BOOL IsValid(){ return m_bIsPEFile; }
 	std::string GetDosHeaderString();
 	std::string GetNTHeaderString();
@@ -73,6 +74,7 @@ public:
 	void ShowResourceNode(PIMAGE_RESOURCE_DIRECTORY pIRD,PRESOURCE_ITEM pResItem);
 private:
 	char* m_filebuf;
+	char* m_pebuf;
 	/*
 		dos头：为了兼容旧版本的dos系统
 	*/

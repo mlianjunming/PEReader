@@ -8,6 +8,7 @@ PEReader::PEReader()
 PEReader::PEReader(const char* filename)
 {
 	PEReader();
+	m_filebuf = NULL;
 	Reload(filename);
 }
 
@@ -49,38 +50,19 @@ void PEReader::initMachineMap()
 	PEReader::MachineMap.insert(std::map<WORD, std::string>::value_type(IMAGE_FILE_MACHINE_M32R, "IMAGE_FILE_MACHINE_M32R"));
 	PEReader::MachineMap.insert(std::map<WORD, std::string>::value_type(IMAGE_FILE_MACHINE_CEE, "IMAGE_FILE_MACHINE_CEE"));
 }
-int PEReader::Reload(FILE* pFile)
+int PEReader::ReloadBuf(char* buf)
 {
-	clean();
-	long ldFileSize;
-	size_t numRead = 0;
-	if (!pFile)
-	{
-		return PEError::FAILED;
-	}
-	fseek(pFile, 0, SEEK_END);   ///将文件指针移动文件结尾
-	ldFileSize = ftell(pFile); ///求出当前文件指针距离文件开始的字节数
-	DEBUGPRINT("get file size:%ld\n", ldFileSize);
-	m_filebuf = (char*)malloc(ldFileSize);
-
-	fseek(pFile, 0, SEEK_SET);   ///将文件指针移动文件结尾
-	numRead = fread_s(m_filebuf, ldFileSize, ldFileSize, 1, pFile);
-	if (numRead == 0)
-	{
-		ERRORPRINT("fread return 0\n");
-		return PEError::FAILED;
-	}
-
+	m_pebuf = buf;
 	// 定位dos头
-	m_pDosHeader = (PIMAGE_DOS_HEADER)m_filebuf;
+	m_pDosHeader = (PIMAGE_DOS_HEADER)m_pebuf;
 	if (m_pDosHeader->e_magic != 0x5a4d)
 	{
 		ERRORPRINT("get dos header magic error\n");
 		return PEError::NOT_PE_FILE;
 	}
 	// 定位nt头（文件头+可选头）
-	m_pNTHeader32 = (PIMAGE_NT_HEADERS32)(m_filebuf + m_pDosHeader->e_lfanew);
-	m_pNTheader64 = (PIMAGE_NT_HEADERS64)(m_filebuf + m_pDosHeader->e_lfanew);
+	m_pNTHeader32 = (PIMAGE_NT_HEADERS32)(m_pebuf + m_pDosHeader->e_lfanew);
+	m_pNTheader64 = (PIMAGE_NT_HEADERS64)(m_pebuf + m_pDosHeader->e_lfanew);
 	if (m_pNTHeader32->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
 	{
 		m_bIs64File = FALSE;
@@ -217,6 +199,29 @@ int PEReader::Reload(FILE* pFile)
 		}
 	}
 	return PEError::SUCCESS;
+}
+int PEReader::Reload(FILE* pFile)
+{
+	clean();
+	long ldFileSize;
+	size_t numRead = 0;
+	if (!pFile)
+	{
+		return PEError::FAILED;
+	}
+	fseek(pFile, 0, SEEK_END);   ///将文件指针移动文件结尾
+	ldFileSize = ftell(pFile); ///求出当前文件指针距离文件开始的字节数
+	DEBUGPRINT("get file size:%ld\n", ldFileSize);
+	m_filebuf = (char*)malloc(ldFileSize); // free when reload or destructor
+
+	fseek(pFile, 0, SEEK_SET);   ///将文件指针移动文件结尾
+	numRead = fread_s(m_filebuf, ldFileSize, ldFileSize, 1, pFile);
+	if (numRead == 0)
+	{
+		ERRORPRINT("fread return 0\n");
+		return PEError::FAILED;
+	}
+	return ReloadBuf(m_filebuf);
 }
 int PEReader::Reload(const char* openfile)
 {
@@ -420,7 +425,7 @@ DWORD PEReader::GetTargetAddressFromRVA(DWORD rva, DWORD base)
 	DWORD dwFileOffset = GetFileOffsetFromRVA(rva, base);
 	if (dwFileOffset == 0)
 		return 0;
-	return (DWORD)m_filebuf + dwFileOffset;
+	return (DWORD)m_pebuf + dwFileOffset;
 }
 
 void PEReader::ShowResourceNode(PIMAGE_RESOURCE_DIRECTORY pIRD, PRESOURCE_ITEM pResItem)
@@ -475,6 +480,11 @@ void PEReader::ShowResourceNode(PIMAGE_RESOURCE_DIRECTORY pIRD, PRESOURCE_ITEM p
 
 void PEReader::clean()
 {
+	if (m_filebuf)
+	{
+		free(m_filebuf);
+		m_filebuf = NULL;
+	}
 	m_pIED = NULL;
 	m_pNTHeader32 = NULL;
 	m_pNTheader64 = NULL;
@@ -484,7 +494,7 @@ void PEReader::clean()
 	m_ResourceSection = NULL;
 	m_bIs64File = FALSE;
 	m_bIsPEFile = FALSE;
-	m_filebuf = NULL;
+	m_pebuf = NULL;
 	m_vecRes.clear();
 	m_Exp.dllname.clear();
 	m_Exp.vecFunc.clear();
